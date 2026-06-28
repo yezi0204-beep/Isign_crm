@@ -4,6 +4,7 @@ import sqlite3
 import bcrypt
 import pandas as pd
 import streamlit as st
+import hashlib
 from contextlib import contextmanager
 from datetime import datetime, date
 
@@ -220,6 +221,8 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+        
+        _add_column_if_not_exists(conn, 'contracts', 'party_a', 'party_a TEXT')
 
         # 为 business 和 contracts 表增加 total_cost 字段（如果还没有）
         _add_column_if_not_exists(conn, 'business', 'total_cost', 'total_cost REAL DEFAULT 0')
@@ -391,17 +394,22 @@ def init_db():
 
 # ========== 4. 密码哈希辅助函数 ==========
 def hash_password(pwd: str) -> str:
+    """使用 bcrypt 哈希密码"""
     return bcrypt.hashpw(pwd.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
+
 def check_password(pwd: str, hashed: str) -> bool:
+    """
+    验证密码，兼容旧版 SHA256 哈希
+    """
     if hashed.startswith('$2b$'):
         try:
             return bcrypt.checkpw(pwd.encode('utf-8'), hashed.encode('utf-8'))
         except ValueError:
             return False
     else:
-        import hashlib
-        return hashlib.sha256(pwd.encode()).hexdigest() == hashed
+        old_hash = hashlib.sha256(pwd.encode()).hexdigest()
+        return old_hash == hashed
 
 # ========== 5. 主程序 ==========
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 import streamlit as st
-from database import query_df
+from database import query_df, execute_sql
 from datetime import date, datetime
 
 @st.cache_data(ttl=600)

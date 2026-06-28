@@ -8,7 +8,7 @@ from utils import get_user_map, clear_user_cache
 from config import CONTRACT_CLASSIFICATIONS, BUSINESS_TYPES
 
 def show_contracts(uid: str, is_boss: bool):
-    """合同回款管理模块（含商机成本迁移）"""
+    """合同回款管理模块（含甲方字段）"""
     st.title("💰 合同与回款管理")
 
     user_map = get_user_map()
@@ -43,6 +43,7 @@ def show_contracts(uid: str, is_boss: bool):
 
             contract_name = st.text_input("合同名称 *")
             contract_no = st.text_input("合同编号 *")
+            party_a = st.text_input("甲方", placeholder="填写甲方单位全称")
             project_order_no = st.text_input("项目令号")
             total_amt = st.number_input("合同总额（万元）", min_value=0.0, step=1.0, format="%.2f") * 10000
             sign_date = st.date_input("签约日期", datetime.now().date())
@@ -70,22 +71,22 @@ def show_contracts(uid: str, is_boss: bool):
                                 cursor = conn.cursor()
                                 sql = """
                                     INSERT INTO contracts
-                                    (b_id, contract_no, total_amt, paid_amt, sign_date, owner_id, status,
+                                    (b_id, contract_no, party_a, project_order_no, total_amt, paid_amt, sign_date, owner_id, status,
                                      contract_name, classification, is_audit, pending_acceptance_amount,
                                      cost, gross_profit, acceptance_date, expected_income_date,
-                                     expected_income_year, business_type, project_order_no, total_cost)
-                                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)
+                                     expected_income_year, business_type, total_cost)
+                                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)
                                 """
-                                params = (b_id, contract_no.strip(), total_amt, 0, sign_date, owner, '执行中',
+                                params = (b_id, contract_no.strip(), party_a.strip(), project_order_no,
+                                          total_amt, 0, sign_date, owner, '执行中',
                                           contract_name.strip(), classification, 1 if is_audit else 0, pending_acceptance,
                                           cost, gross_profit, acceptance_date, expected_income_date,
-                                          expected_income_year, business_type, project_order_no)
+                                          expected_income_year, business_type)
                                 cursor.execute(sql, params)
                                 contract_id = cursor.lastrowid
 
                                 # 如果关联了商机，将商机成本迁移到合同
                                 if b_id:
-                                    # 查询商机下的所有成本（使用统一的 costs 表）
                                     costs = query_df("""
                                         SELECT cost_type, amount, description, cost_date, created_by
                                         FROM costs
@@ -139,13 +140,14 @@ def show_contracts(uid: str, is_boss: bool):
     df_unaccepted = df_con[~df_con['is_accepted']]
     if not df_unaccepted.empty:
         with st.expander(f"📋 未验收合同（共 {len(df_unaccepted)} 份，点击展开快速处理）", expanded=False):
-            unaccepted_display = df_unaccepted[['contract_name', 'contract_no', 'total_amt', 'sign_date', 'owner_name']].copy()
+            unaccepted_display = df_unaccepted[['contract_name', 'contract_no', 'party_a', 'total_amt', 'sign_date', 'owner_name']].copy()
             unaccepted_display['total_amt_wan'] = unaccepted_display['total_amt'] / 10000
             st.dataframe(
-                unaccepted_display[['contract_name', 'contract_no', 'total_amt_wan', 'sign_date', 'owner_name']],
+                unaccepted_display[['contract_name', 'contract_no', 'party_a', 'total_amt_wan', 'sign_date', 'owner_name']],
                 column_config={
                     "contract_name": "合同名称",
                     "contract_no": "合同编号",
+                    "party_a": "甲方",
                     "total_amt_wan": st.column_config.NumberColumn("合同总额(万元)", format="%.2f"),
                     "sign_date": "签约日期",
                     "owner_name": "负责人"
@@ -176,8 +178,8 @@ def show_contracts(uid: str, is_boss: bool):
     else:
         df_con_display = df_con.copy()
 
-    # 展示列（含总成本）
-    display_cols = ['contract_name', 'contract_no', 'project_order_no', 'total_amt', 'paid_amt', 'pending_payment',
+    # 展示列（含甲方）
+    display_cols = ['contract_name', 'contract_no', 'party_a', 'project_order_no', 'total_amt', 'paid_amt', 'pending_payment',
                     '验收状态', 'classification', 'business_type', 'sign_date', 'acceptance_date',
                     'expected_income_date', 'expected_income_year', 'cost', 'gross_profit',
                     'is_audit', 'pending_acceptance_amount', 'status', 'owner_name', 'total_cost']
@@ -192,6 +194,7 @@ def show_contracts(uid: str, is_boss: bool):
     column_config = {
         "contract_name": "合同名称",
         "contract_no": "合同编号",
+        "party_a": "甲方",
         "project_order_no": "项目令号",
         "total_amt": st.column_config.NumberColumn("合同总额(万元)", format="%.2f"),
         "paid_amt": st.column_config.NumberColumn("已回款(万元)", format="%.2f"),
@@ -221,6 +224,9 @@ def show_contracts(uid: str, is_boss: bool):
         with st.expander(f"{row['contract_name']}（{row['contract_no']}）"):
             col1, col2 = st.columns([3, 1])
             with col1:
+                st.markdown(f"**合同名称**：{row['contract_name']}")
+                st.markdown(f"**合同编号**：{row['contract_no']}")
+                st.markdown(f"**甲方**：{row['party_a'] if row.get('party_a') else '未填写'}")
                 st.markdown(f"**合同总额**：￥{row['total_amt']/10000:,.2f} 万元")
                 st.markdown(f"**已回款**：￥{row['paid_amt']/10000:,.2f} 万元")
                 st.markdown(f"**待回款**：￥{row['pending_payment']/10000:,.2f} 万元")
@@ -238,6 +244,7 @@ def show_contracts(uid: str, is_boss: bool):
                         with st.form(f"edit_contract_{row['id']}"):
                             new_contract_name = st.text_input("合同名称", value=row['contract_name'])
                             new_contract_no = st.text_input("合同编号", value=row['contract_no'])
+                            new_party_a = st.text_input("甲方", value=row['party_a'] if row.get('party_a') else "")
                             new_project_order = st.text_input("项目令号", value=row['project_order_no'] if pd.notna(row['project_order_no']) else "")
                             new_total = st.number_input("合同总额(万元)", min_value=0.0, step=1.0, format="%.2f", value=row['total_amt']/10000) * 10000
                             new_sign_date = st.date_input("签约日期", value=pd.to_datetime(row['sign_date']).date() if pd.notna(row['sign_date']) else date.today())
@@ -269,13 +276,13 @@ def show_contracts(uid: str, is_boss: bool):
                             if st.form_submit_button("保存修改"):
                                 sql_update = """
                                     UPDATE contracts SET
-                                        contract_name=?, contract_no=?, project_order_no=?, total_amt=?, sign_date=?,
+                                        contract_name=?, contract_no=?, party_a=?, project_order_no=?, total_amt=?, sign_date=?,
                                         classification=?, is_audit=?, pending_acceptance_amount=?,
                                         cost=?, gross_profit=?, acceptance_date=?, expected_income_date=?,
                                         expected_income_year=?, business_type=?, status=?, owner_id=?
                                     WHERE id=?
                                 """
-                                params = (new_contract_name, new_contract_no, new_project_order, new_total, new_sign_date,
+                                params = (new_contract_name, new_contract_no, new_party_a, new_project_order, new_total, new_sign_date,
                                           new_classification, 1 if new_is_audit else 0, new_pending_accept,
                                           new_cost, new_gross, new_accept_date, new_exp_income_date,
                                           new_exp_income_year, new_business_type, new_status, new_owner, row['id'])
