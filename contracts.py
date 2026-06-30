@@ -1,4 +1,4 @@
-# contracts.py
+# contracts.py - 合同管理模块（专注于合同）
 
 import streamlit as st
 import pandas as pd
@@ -7,9 +7,20 @@ from database import query_df, execute_sql, get_db_connection
 from utils import get_user_map, clear_user_cache
 from config import CONTRACT_CLASSIFICATIONS, BUSINESS_TYPES
 
+
+@st.cache_data(ttl=300, show_spinner="正在加载合同数据...")
+def load_contracts_data(uid: str, is_boss: bool):
+    """加载合同数据（带缓存）"""
+    if is_boss:
+        df = query_df("SELECT * FROM contracts ORDER BY sign_date DESC")
+    else:
+        df = query_df("SELECT * FROM contracts WHERE owner_id = ? ORDER BY sign_date DESC", (uid,))
+    return df
+
+
 def show_contracts(uid: str, is_boss: bool):
-    """合同回款管理模块（含甲方字段）"""
-    st.title("💰 合同与回款管理")
+    """合同管理模块（专注于合同）"""
+    st.title("📜 合同管理")
 
     user_map = get_user_map()
     today = date.today()
@@ -75,7 +86,7 @@ def show_contracts(uid: str, is_boss: bool):
                                      contract_name, classification, is_audit, pending_acceptance_amount,
                                      cost, gross_profit, acceptance_date, expected_income_date,
                                      expected_income_year, business_type, total_cost)
-                                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                                 """
                                 params = (b_id, contract_no.strip(), party_a.strip(), project_order_no,
                                           total_amt, 0, sign_date, owner, '执行中',
@@ -101,28 +112,25 @@ def show_contracts(uid: str, is_boss: bool):
                                                   cost_row['description'], cost_row['cost_date'], cost_row['created_by']))
                                         total_migrated = costs['amount'].sum()
                                         cursor.execute("UPDATE contracts SET total_cost = total_cost + ? WHERE id = ?", (total_migrated, contract_id))
-                                        st.info(f"已自动迁移商机成本 {total_migrated:,.2f} 元到合同。")
+                                        st.info(f"已自动迁移商机成本 {total_migrated/10000:,.2f} 万元到合同。")
                                 conn.commit()
                                 st.success("合同录入成功")
                                 clear_user_cache()
-                                st.cache_data.clear()
+                                load_contracts_data.clear()
                                 st.rerun()
                         except Exception as e:
-                            st.error(f"保存失败：{e}")
+                            st.error(f"保存失败: {e}")
 
     st.divider()
 
     # ---------- 加载合同数据 ----------
-    if is_boss:
-        df_con = query_df("SELECT * FROM contracts ORDER BY sign_date DESC")
-    else:
-        df_con = query_df("SELECT * FROM contracts WHERE owner_id = ? ORDER BY sign_date DESC", (uid,))
+    df_con = load_contracts_data(uid, is_boss)
 
     if df_con.empty:
         st.info("暂无合同数据，请先创建合同")
         return
 
-    # 数值列转换
+    # 数据处理
     numeric_cols = ['total_amt', 'paid_amt', 'pending_acceptance_amount', 'cost', 'gross_profit', 'expected_income_year', 'total_cost']
     for col in numeric_cols:
         if col in df_con.columns:
@@ -165,7 +173,7 @@ def show_contracts(uid: str, is_boss: bool):
                         execute_sql("UPDATE contracts SET acceptance_date = ? WHERE id = ?", (today, row['id']))
                         st.success(f"合同 {row['contract_no']} 已标记为验收（验收日期：{today}）")
                         clear_user_cache()
-                        st.cache_data.clear()
+                        load_contracts_data.clear()
                         st.rerun()
                 st.divider()
     else:
@@ -180,9 +188,9 @@ def show_contracts(uid: str, is_boss: bool):
 
     # 展示列（含甲方）
     display_cols = ['contract_name', 'contract_no', 'party_a', 'project_order_no', 'total_amt', 'paid_amt', 'pending_payment',
-                    '验收状态', 'classification', 'business_type', 'sign_date', 'acceptance_date',
-                    'expected_income_date', 'expected_income_year', 'cost', 'gross_profit',
-                    'is_audit', 'pending_acceptance_amount', 'status', 'owner_name', 'total_cost']
+                   '验收状态', 'classification', 'business_type', 'sign_date', 'acceptance_date',
+                   'expected_income_date', 'expected_income_year', 'cost', 'gross_profit',
+                   'is_audit', 'pending_acceptance_amount', 'status', 'owner_name', 'total_cost']
     display_cols = [c for c in display_cols if c in df_con_display.columns]
     df_display = df_con_display[display_cols].copy()
 
@@ -216,6 +224,8 @@ def show_contracts(uid: str, is_boss: bool):
     }
 
     st.dataframe(df_display, use_container_width=True, hide_index=True, column_config=column_config)
+
+    st.divider()
 
     # ---------- 合同详情操作 ----------
     st.subheader("✏️ 合同详情操作")
@@ -251,7 +261,7 @@ def show_contracts(uid: str, is_boss: bool):
                             new_classification = st.selectbox("项目密级", CONTRACT_CLASSIFICATIONS,
                                                                index=CONTRACT_CLASSIFICATIONS.index(row['classification']) if row['classification'] in CONTRACT_CLASSIFICATIONS else 0)
                             new_is_audit = st.checkbox("是否审价", value=bool(row['is_audit']))
-                            new_pending_accept = st.number_input("待验收金额(万元)", min_value=0.0, step=1.0, format="%.2f", value=row['pending_acceptance_amount']/10000) * 10000
+                            new_pending_acceptance = st.number_input("待验收金额(万元)", min_value=0.0, step=1.0, format="%.2f", value=row['pending_acceptance_amount']/10000) * 10000
                             new_cost = st.number_input("成本(万元)", min_value=0.0, step=1.0, format="%.2f", value=row['cost']/10000) * 10000
                             new_gross = st.number_input("毛利(万元)", min_value=0.0, step=1.0, format="%.2f", value=row['gross_profit']/10000) * 10000
                             new_accept_date = st.date_input("合同验收日期", value=row['acceptance_date'] if pd.notna(row['acceptance_date']) else None)
@@ -268,7 +278,7 @@ def show_contracts(uid: str, is_boss: bool):
                                 if current_owner_label is None:
                                     current_owner_label = f"{row['owner_id']} - {row['owner_id']}"
                                 selected_owner_label = st.selectbox("负责人", list(user_options.keys()),
-                                                                    index=list(user_options.keys()).index(current_owner_label) if current_owner_label in user_options else 0)
+                                                                   index=list(user_options.keys()).index(current_owner_label) if current_owner_label in user_options else 0)
                                 new_owner = user_options[selected_owner_label]
                             else:
                                 new_owner = row['owner_id']
@@ -283,33 +293,33 @@ def show_contracts(uid: str, is_boss: bool):
                                     WHERE id=?
                                 """
                                 params = (new_contract_name, new_contract_no, new_party_a, new_project_order, new_total, new_sign_date,
-                                          new_classification, 1 if new_is_audit else 0, new_pending_accept,
+                                          new_classification, 1 if new_is_audit else 0, new_pending_acceptance,
                                           new_cost, new_gross, new_accept_date, new_exp_income_date,
                                           new_exp_income_year, new_business_type, new_status, new_owner, row['id'])
                                 try:
                                     execute_sql(sql_update, params)
                                     st.success("合同更新成功")
                                     clear_user_cache()
-                                    st.cache_data.clear()
+                                    load_contracts_data.clear()
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"更新失败: {e}")
 
                     with st.popover("🗑️ 删除"):
                         st.warning("确定删除此合同？此操作不可逆。")
-                        if st.button("确认删除", key=f"del_contract_{row['id']}"):
+                        if st.button("确认删除", key=f"del_contract_{row['id']}", type="primary"):
                             try:
                                 execute_sql("DELETE FROM contracts WHERE id=?", (row['id'],))
                                 st.success("合同已删除")
                                 clear_user_cache()
-                                st.cache_data.clear()
+                                load_contracts_data.clear()
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"删除失败: {e}")
 
-            # ---------- 回款明细 ----------
+            # ---------- 回款摘要（简化版） ----------
             st.divider()
-            st.markdown("#### 💰 回款明细")
+            st.markdown("#### 💰 回款摘要（详细管理请前往「回款管理」）")
             payment_df = query_df(
                 "SELECT id, payment_date, amount, note FROM payment_records WHERE contract_id = ? ORDER BY payment_date DESC",
                 (row['id'],)
@@ -328,73 +338,7 @@ def show_contracts(uid: str, is_boss: bool):
                     use_container_width=True,
                     hide_index=True
                 )
-                for _, pay_row in payment_df.iterrows():
-                    cols = st.columns([2, 2, 4, 1, 1])
-                    with cols[0]:
-                        st.write(pd.to_datetime(pay_row['payment_date']).strftime('%Y-%m-%d'))
-                    with cols[1]:
-                        st.write(f"￥{pay_row['amount']/10000:,.2f} 万元")
-                    with cols[2]:
-                        st.write(pay_row['note'] if pay_row['note'] else "")
-                    with cols[3]:
-                        if can_edit:
-                            with st.popover(f"✏️ 编辑 {pay_row['id']}"):
-                                with st.form(f"edit_payment_{pay_row['id']}"):
-                                    new_date = st.date_input("回款日期", value=pd.to_datetime(pay_row['payment_date']).date())
-                                    new_amount = st.number_input("金额（万元）", min_value=0.0, step=0.01, format="%.2f", value=pay_row['amount']/10000) * 10000
-                                    new_note = st.text_input("备注", value=pay_row['note'] if pay_row['note'] else "")
-                                    if st.form_submit_button("保存"):
-                                        delta = new_amount - pay_row['amount']
-                                        try:
-                                            execute_sql("UPDATE contracts SET paid_amt = paid_amt + ? WHERE id = ?", (delta, row['id']))
-                                            execute_sql("UPDATE payment_records SET payment_date=?, amount=?, note=? WHERE id=?",
-                                                        (new_date, new_amount, new_note, pay_row['id']))
-                                            st.success("更新成功")
-                                            clear_user_cache()
-                                            st.cache_data.clear()
-                                            st.rerun()
-                                        except Exception as e:
-                                            st.error(f"更新失败: {e}")
-                    with cols[4]:
-                        if can_edit:
-                            with st.popover(f"🗑️ 删除 {pay_row['id']}"):
-                                st.warning("确定删除此回款记录？")
-                                if st.button("确认删除", key=f"del_payment_{pay_row['id']}"):
-                                    try:
-                                        execute_sql("UPDATE contracts SET paid_amt = paid_amt - ? WHERE id = ?", (pay_row['amount'], row['id']))
-                                        execute_sql("DELETE FROM payment_records WHERE id = ?", (pay_row['id'],))
-                                        st.success("删除成功")
-                                        clear_user_cache()
-                                        st.cache_data.clear()
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"删除失败: {e}")
+                total_paid = payment_df['amount'].sum()
+                st.info(f"**累计已回款**：￥{total_paid/10000:,.2f} 万元，共 {len(payment_df)} 笔")
             else:
-                st.info("暂无回款记录")
-
-            if can_edit:
-                with st.form(key=f"new_payment_{row['id']}"):
-                    st.markdown("**新增回款**")
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        pay_date = st.date_input("回款日期", value=date.today())
-                    with col2:
-                        pay_amount = st.number_input("金额（万元）", min_value=0.0, step=0.01, format="%.2f") * 10000
-                    with col3:
-                        pay_note = st.text_input("备注")
-                    if st.form_submit_button("添加回款"):
-                        if pay_amount > 0:
-                            try:
-                                execute_sql(
-                                    "INSERT INTO payment_records (contract_id, payment_date, amount, note) VALUES (?, ?, ?, ?)",
-                                    (row['id'], pay_date, pay_amount, pay_note)
-                                )
-                                execute_sql("UPDATE contracts SET paid_amt = paid_amt + ? WHERE id = ?", (pay_amount, row['id']))
-                                st.success("回款添加成功")
-                                clear_user_cache()
-                                st.cache_data.clear()
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"添加失败: {e}")
-                        else:
-                            st.error("金额必须大于0")
+                st.info("暂无回款记录，请到「回款管理」添加")

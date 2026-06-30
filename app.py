@@ -113,7 +113,7 @@ st.sidebar.markdown(f"👋 {user_name} ({', '.join(user_roles)})")
 menu_items = []
 # 核心业务：主任或院长可见全部
 if '主任' in user_roles or '院长' in user_roles:
-    menu_items.extend(["📊 驾驶舱", "👥 客户管理", "🎯 商机看板", "📜 合同回款", "🌊 公海池", "📈 全周期日志", "📁 数据导出"])
+    menu_items.extend(["📊 驾驶舱", "👥 客户管理", "🎯 商机看板", "📜 合同管理", "💰 回款管理", "🌊 公海池", "📈 全周期日志", "📁 数据导出"])
 # 其他角色（销售/售前/项目经理）添加相应菜单
 if '销售' in user_roles or '售前' in user_roles or '项目经理' in user_roles:
     if "📊 驾驶舱" not in menu_items:
@@ -122,8 +122,10 @@ if '销售' in user_roles or '售前' in user_roles or '项目经理' in user_ro
         menu_items.append("👥 客户管理")
     if "🎯 商机看板" not in menu_items:
         menu_items.append("🎯 商机看板")
-    if "📜 合同回款" not in menu_items:
-        menu_items.append("📜 合同回款")
+    if "📜 合同管理" not in menu_items:
+        menu_items.append("📜 合同管理")
+    if "💰 回款管理" not in menu_items:
+        menu_items.append("💰 回款管理")
     if "🌊 公海池" not in menu_items:
         menu_items.append("🌊 公海池")
     if "📈 全周期日志" not in menu_items:
@@ -200,9 +202,12 @@ elif menu == "👥 客户管理":
 elif menu == "🎯 商机看板":
     from business import show_business
     show_business(uid, is_boss)
-elif menu == "📜 合同回款":
+elif menu == "📜 合同管理":
     from contracts import show_contracts
     show_contracts(uid, is_boss)
+elif menu == "💰 回款管理":
+    from payments import show_payments
+    show_payments(uid, is_boss)
 elif menu == "🌊 公海池":
     from highseas import show_highseas
     show_highseas(uid)
